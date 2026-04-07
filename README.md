@@ -2,6 +2,16 @@
 
 ## Developer Setup
 
+### Dependencies
+
+Requires sqlite3 to compile.
+Debian/Ubuntu:
+```bash
+sudo apt update && sudo apt install libsqlite3-dev
+```
+
+### Diesel
+
 Install `diesel_cli` using either [cargo-binstall] or `cargo install`:
 ```bash
 cargo install binstall
