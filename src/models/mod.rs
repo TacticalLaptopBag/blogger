@@ -12,6 +12,12 @@ pub struct LoginForm {
 }
 
 #[derive(Deserialize)]
+pub struct BlogPostForm {
+    pub title: String,
+    pub post_content: String,
+}
+
+#[derive(Deserialize)]
 pub struct ChangePasswordForm {
     pub old_password: String,
     pub password: String,

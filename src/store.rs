@@ -138,7 +138,7 @@ impl AppState {
             .expect("Failed to get post list")
     }
 
-    pub fn get_post(&self, id: String) -> Option<BlogPost> {
+    pub fn get_post(&self, id: &str) -> Option<BlogPost> {
         blog_post::table
             .filter(blog_post::id.eq(id))
             .select(BlogPost::as_select())
@@ -154,9 +154,14 @@ impl AppState {
             .expect("Failed to create post");
     }
 
-    pub fn update_post(&self, mut post: UpdateBlogPost) {
+    pub fn update_post(&self, id: String, title: String, post_content: String) {
         let now = Utc::now().naive_utc();
-        post.modified_at = now.to_string();
+        let post = UpdateBlogPost {
+            id,
+            title,
+            post_content,
+            modified_at: now.to_string(),
+        };
         diesel::update(blog_post::table)
             .filter(blog_post::id.eq(&post.id))
             .set(&post)

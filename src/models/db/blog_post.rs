@@ -1,8 +1,9 @@
 use diesel::{prelude::*, sqlite::Sqlite};
+use serde::{Deserialize, Serialize};
 
 use crate::schema;
 
-#[derive(Debug, Queryable, Selectable)]
+#[derive(Debug, Queryable, Selectable, Serialize)]
 #[diesel(
     table_name = schema::blog_post,
     check_for_backend(Sqlite),
@@ -28,7 +29,7 @@ pub struct NewBlogPost {
     pub post_content: String,
 }
 
-#[derive(Debug, Queryable, Selectable)]
+#[derive(Debug, Serialize, Queryable, Selectable)]
 #[diesel(
     table_name = schema::blog_post,
     check_for_backend(Sqlite),
@@ -40,7 +41,7 @@ pub struct BlogPostItem {
     pub created_at: String,
 }
 
-#[derive(Debug, AsChangeset)]
+#[derive(Debug, AsChangeset, Deserialize)]
 #[diesel(
     table_name = schema::blog_post,
     check_for_backend(Sqlite),
