@@ -1,11 +1,11 @@
-use crate::models::db::NewUser;
-use crate::models::db::User;
-use crate::schema::token_blacklist;
-use crate::schema::users;
-use crate::{config::Config, models::db::BlacklistEntry};
+use crate::config::Config;
+use crate::models::db::blog_post::{BlogPost, BlogPostItem, NewBlogPost, UpdateBlogPost};
+use crate::models::db::user::{BlacklistEntry, NewUser, User};
+use crate::schema::{blog_post, token_blacklist, users};
 use chrono::DateTime;
 use chrono::Utc;
 use diesel::QueryDsl;
+use diesel::SelectableHelper;
 use diesel::dsl::exists;
 use diesel::r2d2::ConnectionManager;
 use diesel::{ExpressionMethods, RunQueryDsl, SqliteConnection};
@@ -129,5 +129,44 @@ impl AppState {
             .set(users::password_hash.eq(hash))
             .execute(&mut self.get_conn())
             .expect("Failed to update password");
+    }
+
+    pub fn get_post_list(&self) -> Vec<BlogPostItem> {
+        blog_post::table
+            .select(BlogPostItem::as_select())
+            .load::<BlogPostItem>(&mut self.get_conn())
+            .expect("Failed to get post list")
+    }
+
+    pub fn get_post(&self, id: String) -> Option<BlogPost> {
+        blog_post::table
+            .filter(blog_post::id.eq(id))
+            .select(BlogPost::as_select())
+            .load::<BlogPost>(&mut self.get_conn())
+            .ok()
+            .and_then(|blogs| blogs.into_iter().next())
+    }
+
+    pub fn create_post(&self, blog: NewBlogPost) {
+        diesel::insert_into(blog_post::table)
+            .values(&blog)
+            .execute(&mut self.get_conn())
+            .expect("Failed to create post");
+    }
+
+    pub fn update_post(&self, mut post: UpdateBlogPost) {
+        let now = Utc::now().naive_utc();
+        post.modified_at = now.to_string();
+        diesel::update(blog_post::table)
+            .filter(blog_post::id.eq(&post.id))
+            .set(&post)
+            .execute(&mut self.get_conn())
+            .expect("Failed to update post");
+    }
+
+    pub fn delete_post(&self, id: &str) {
+        diesel::delete(blog_post::table.filter(blog_post::id.eq(id)))
+            .execute(&mut self.get_conn())
+            .expect("Failed to delete post");
     }
 }

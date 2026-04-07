@@ -2,6 +2,7 @@ mod auth;
 mod config;
 mod errors;
 mod models;
+mod post;
 mod schema;
 mod store;
 
@@ -39,7 +40,12 @@ async fn main() -> std::io::Result<()> {
                 .route("/refresh", web::post().to(auth::refresh_post))
                 // Logout: blacklist token and clear cookies
                 .route("/logout", web::post().to(auth::logout_post))
-                .route("/protected", web::get().to(auth::protected_get)),
+                .route("/protected", web::get().to(auth::protected_get))
+                .route("/post", web::get().to(post::post_list_get))
+                .route("/post", web::post().to(post::post_post))
+                .route("/post/{id}", web::get().to(post::post_get))
+                .route("/post/{id}", web::put().to(post::post_put))
+                .route("/post/{id}", web::delete().to(post::post_delete)),
         )
     })
     .bind((host.as_str(), port))?
