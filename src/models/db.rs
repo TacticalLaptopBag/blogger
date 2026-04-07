@@ -1,4 +1,4 @@
-use chrono::{NaiveDate, NaiveDateTime};
+use chrono::NaiveDateTime;
 use diesel::{prelude::*, sqlite::Sqlite};
 
 use crate::schema;

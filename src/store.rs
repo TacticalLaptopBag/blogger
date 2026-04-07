@@ -1,6 +1,9 @@
-use crate::schema::token_blacklist::dsl::*;
+use crate::models::db::User;
+use crate::schema::token_blacklist;
+use crate::schema::users;
 use crate::{config::Config, models::db::BlacklistEntry};
 use chrono::{NaiveDateTime, Utc};
+use diesel::dsl::exists;
 use diesel::r2d2::ConnectionManager;
 use diesel::{ExpressionMethods, RunQueryDsl, SqliteConnection, query_dsl::methods::FilterDsl};
 use r2d2::{Pool, PooledConnection};
@@ -19,7 +22,7 @@ impl AppState {
         let pool = r2d2::Pool::builder()
             .build(manager)
             .expect("Failed to create pool");
-        let mut state = Self { config, pool };
+        let state = Self { config, pool };
         state.prune_blacklist();
         state
     }
@@ -29,30 +32,41 @@ impl AppState {
     }
 
     /// Add a JTI to the blacklist.
-    pub fn blacklist_token(&mut self, other_jti: &str, exp: NaiveDateTime) {
+    pub fn blacklist_token(&self, other_jti: &str, exp: NaiveDateTime) {
         let entry = BlacklistEntry {
             jti: other_jti.into(),
             expires_at: exp,
         };
 
-        diesel::insert_into(token_blacklist)
+        diesel::insert_into(token_blacklist::table)
             .values(&entry)
-            .execute(&mut self.get_conn());
+            .execute(&mut self.get_conn())
+            .expect("Failed to add token to blacklist");
         self.prune_blacklist();
     }
 
     /// Returns `true` if the JTI is currently blacklisted.
-    pub fn is_blacklisted(&mut self, other_jti: &str) -> bool {
-        diesel::select(diesel::dsl::exists(
-            token_blacklist.filter(jti.eq(other_jti)),
+    pub fn is_blacklisted(&self, jti: &str) -> bool {
+        diesel::select(exists(
+            token_blacklist::table.filter(token_blacklist::jti.eq(jti)),
         ))
         .get_result(&mut self.get_conn())
         .expect("Failed to check token blacklist")
     }
 
     /// Remove expired entries from the blacklist.
-    fn prune_blacklist(&mut self) {
+    fn prune_blacklist(&self) {
         let now = Utc::now().naive_utc();
-        diesel::delete(token_blacklist.filter(expires_at.lt(now))).execute(&mut self.get_conn());
+        diesel::delete(token_blacklist::table.filter(token_blacklist::expires_at.lt(now)))
+            .execute(&mut self.get_conn())
+            .expect("Failed to prune token blacklist");
+    }
+
+    pub fn get_user_by_name(&self, username: &str) -> Option<User> {
+        users::table
+            .filter(users::username.eq(username))
+            .load::<User>(&mut self.get_conn())
+            .ok()
+            .and_then(|users| users.into_iter().next())
     }
 }

@@ -9,7 +9,7 @@ use actix_web::{
     cookie::{Cookie, SameSite, time::Duration},
     web,
 };
-use chrono::Utc;
+use chrono::{TimeDelta, Utc};
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use std::future::Future;
 use std::pin::Pin;
@@ -28,7 +28,7 @@ fn make_token(
     username: &str,
     kind: TokenKind,
 ) -> Result<String, AuthError> {
-    let now = Utc::now().timestamp();
+    let now = Utc::now().naive_utc();
     let expiry_secs = match kind {
         TokenKind::Access => state.config.jwt_expiry_secs,
         TokenKind::Refresh => state.config.jwt_refresh_expiry_secs,
@@ -37,7 +37,7 @@ fn make_token(
     let claims = Claims {
         sub: user_id.to_owned(),
         username: username.to_owned(),
-        exp: now + expiry_secs,
+        exp: now + TimeDelta::seconds(expiry_secs),
         iat: now,
         jti: Uuid::new_v4().to_string(),
         kind,
@@ -112,8 +112,7 @@ pub async fn login_post(
     println!("LOGIN_POST");
     // Look up user
     let user = state
-        .users
-        .get(&form.username)
+        .get_user_by_name(&form.username)
         .ok_or(AuthError::InvalidCredentials)?;
 
     // Verify password
@@ -165,9 +164,7 @@ pub async fn login_get(
     }
 
     let user = state
-        .users
-        .iter()
-        .find(|u| u.id == claims.sub)
+        .get_user_by_name(&claims.username)
         .ok_or(AuthError::InvalidToken)?;
 
     Ok(HttpResponse::Ok().json(UserInfo {

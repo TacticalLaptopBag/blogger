@@ -1,3 +1,4 @@
+use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 
 pub mod db;
@@ -42,9 +43,9 @@ pub struct Claims {
     pub sub: String,
     pub username: String,
     /// Expiry (Unix timestamp)
-    pub exp: i64,
+    pub exp: NaiveDateTime,
     /// Issued-at (Unix timestamp)
-    pub iat: i64,
+    pub iat: NaiveDateTime,
     /// Unique token id — used for blacklisting
     pub jti: String,
     pub kind: TokenKind,
