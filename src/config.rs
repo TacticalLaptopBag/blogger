@@ -10,6 +10,8 @@ pub struct Config {
     pub use_secure_cookies: bool,
     pub host: String,
     pub port: u16,
+
+    pub database_url: String,
 }
 
 impl Config {
@@ -34,6 +36,7 @@ impl Config {
                 .unwrap_or("8080".into())
                 .parse()
                 .expect("PORT must be a number"),
+            database_url: env::var("DATABASE_URL").expect("DATABASE_URL must be set"),
         }
     }
 }
