@@ -12,6 +12,8 @@ pub struct Config {
     pub port: u16,
 
     pub database_url: String,
+    pub init_user_name: Option<String>,
+    pub init_user_pass: Option<String>,
 }
 
 impl Config {
@@ -37,6 +39,8 @@ impl Config {
                 .parse()
                 .expect("PORT must be a number"),
             database_url: env::var("DATABASE_URL").expect("DATABASE_URL must be set"),
+            init_user_name: env::var("INIT_USER_NAME").ok(),
+            init_user_pass: env::var("INIT_USER_PASS").ok(),
         }
     }
 }

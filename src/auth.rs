@@ -1,6 +1,6 @@
 use crate::{
     errors::AuthError,
-    models::{AuthResponse, Claims, LoginForm, TokenKind, UserInfo},
+    models::{AuthResponse, ChangePasswordForm, Claims, LoginForm, TokenKind, UserInfo},
     store::AppState,
 };
 use actix_web::FromRequest;
@@ -9,7 +9,8 @@ use actix_web::{
     cookie::{Cookie, SameSite, time::Duration},
     web,
 };
-use chrono::{TimeDelta, Utc};
+use chrono::Utc;
+use jsonwebtoken::errors::ErrorKind;
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use std::future::Future;
 use std::pin::Pin;
@@ -28,7 +29,7 @@ fn make_token(
     username: &str,
     kind: TokenKind,
 ) -> Result<String, AuthError> {
-    let now = Utc::now().naive_utc();
+    let now = Utc::now().timestamp();
     let expiry_secs = match kind {
         TokenKind::Access => state.config.jwt_expiry_secs,
         TokenKind::Refresh => state.config.jwt_refresh_expiry_secs,
@@ -37,7 +38,7 @@ fn make_token(
     let claims = Claims {
         sub: user_id.to_owned(),
         username: username.to_owned(),
-        exp: now + TimeDelta::seconds(expiry_secs),
+        exp: now + expiry_secs,
         iat: now,
         jti: Uuid::new_v4().to_string(),
         kind,
@@ -61,12 +62,9 @@ fn verify_token(state: &AppState, token: &str) -> Result<Claims, AuthError> {
         &validation,
     )
     .map(|data| data.claims)
-    .map_err(|e| {
-        use jsonwebtoken::errors::ErrorKind;
-        match e.kind() {
-            ErrorKind::ExpiredSignature => AuthError::ExpiredToken,
-            _ => AuthError::InvalidToken,
-        }
+    .map_err(|e| match e.kind() {
+        ErrorKind::ExpiredSignature => AuthError::ExpiredToken,
+        _ => AuthError::InvalidToken,
     })
 }
 
@@ -109,7 +107,6 @@ pub async fn login_post(
     state: web::Data<AppState>,
     form: web::Form<LoginForm>,
 ) -> Result<HttpResponse, AuthError> {
-    println!("LOGIN_POST");
     // Look up user
     let user = state
         .get_user_by_name(&form.username)
@@ -144,27 +141,16 @@ pub async fn login_post(
         .cookie(refresh_cookie)
         .json(AuthResponse {
             message: "Logged in successfully".into(),
-            token_type: "Bearer".into(),
         }))
 }
 
 /// GET /login — return information about the currently authenticated user.
 pub async fn login_get(
-    req: HttpRequest,
+    claims: Claims,
     state: web::Data<AppState>,
 ) -> Result<HttpResponse, AuthError> {
-    let token = cookie_value(&req, ACCESS_COOKIE).ok_or(AuthError::MissingToken)?;
-    let claims = verify_token(&state, &token)?;
-
-    if state.is_blacklisted(&claims.jti) {
-        return Err(AuthError::BlacklistedToken);
-    }
-    if claims.kind != TokenKind::Access {
-        return Err(AuthError::InvalidToken);
-    }
-
     let user = state
-        .get_user_by_name(&claims.username)
+        .get_user_by_id(&claims.sub)
         .ok_or(AuthError::InvalidToken)?;
 
     Ok(HttpResponse::Ok().json(UserInfo {
@@ -191,6 +177,12 @@ pub async fn refresh_post(
     // Blacklist the used refresh token (single-use rotation)
     state.blacklist_token(&claims.jti, claims.exp);
 
+    // Blacklist the refreshed token, if it hasn't already expired
+    let access_token = cookie_value(&req, ACCESS_COOKIE).ok_or(AuthError::MissingToken)?;
+    if let Ok(access_claims) = verify_token(&state, &access_token) {
+        state.blacklist_token(&access_claims.jti, access_claims.exp);
+    }
+
     let new_access = make_token(&state, &claims.sub, &claims.username, TokenKind::Access)?;
     let new_refresh = make_token(&state, &claims.sub, &claims.username, TokenKind::Refresh)?;
 
@@ -212,7 +204,6 @@ pub async fn refresh_post(
         .cookie(refresh_cookie)
         .json(AuthResponse {
             message: "Token refreshed".into(),
-            token_type: "Bearer".into(),
         }))
 }
 
@@ -277,4 +268,26 @@ pub async fn protected_get(
     HttpResponse::Ok().json(serde_json::json!({
         "message": format!("Hello, {}!", user.username)
     }))
+}
+
+pub async fn login_put(
+    claims: Claims,
+    form: web::Form<ChangePasswordForm>,
+    state: web::Data<AppState>,
+) -> Result<HttpResponse, AuthError> {
+    let user = state
+        .get_user_by_id(&claims.sub)
+        .ok_or(AuthError::InvalidCredentials)?;
+    let valid = bcrypt::verify(&form.old_password, &user.password_hash)
+        .map_err(|e| AuthError::InternalError(e.to_string()))?;
+
+    if !valid {
+        return Err(AuthError::InvalidCredentials);
+    }
+
+    state.update_password(&user.id, &form.password);
+
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "message": "Password changed successfully"
+    })))
 }

@@ -1,4 +1,3 @@
-use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 
 pub mod db;
@@ -9,6 +8,12 @@ pub mod db;
 #[derive(Deserialize)]
 pub struct LoginForm {
     pub username: String,
+    pub password: String,
+}
+
+#[derive(Deserialize)]
+pub struct ChangePasswordForm {
+    pub old_password: String,
     pub password: String,
 }
 
@@ -23,9 +28,6 @@ pub struct UserInfo {
 #[derive(Serialize)]
 pub struct AuthResponse {
     pub message: String,
-    /// Access token also echoed in the body for non-browser clients.
-    /// The HTTP-only cookie is the primary delivery mechanism for browsers.
-    pub token_type: String,
 }
 
 // ── JWT claims ───────────────────────────────────────────────────────────────
@@ -43,9 +45,9 @@ pub struct Claims {
     pub sub: String,
     pub username: String,
     /// Expiry (Unix timestamp)
-    pub exp: NaiveDateTime,
+    pub exp: i64,
     /// Issued-at (Unix timestamp)
-    pub iat: NaiveDateTime,
+    pub iat: i64,
     /// Unique token id — used for blacklisting
     pub jti: String,
     pub kind: TokenKind,

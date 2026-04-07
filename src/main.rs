@@ -34,6 +34,7 @@ async fn main() -> std::io::Result<()> {
                 // Login: POST submits credentials, GET returns current user info
                 .route("/login", web::post().to(auth::login_post))
                 .route("/login", web::get().to(auth::login_get))
+                .route("/login", web::put().to(auth::login_put))
                 // Refresh the access token using the refresh token cookie
                 .route("/refresh", web::post().to(auth::refresh_post))
                 // Logout: blacklist token and clear cookies
