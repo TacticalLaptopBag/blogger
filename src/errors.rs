@@ -1,33 +1,26 @@
 use actix_web::{HttpResponse, ResponseError};
 use serde::Serialize;
-use std::fmt;
+use thiserror::Error;
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum AuthError {
+    #[error("Invalid username or password")]
     InvalidCredentials,
+    #[error("Invalid token")]
     InvalidToken,
+    #[error("Token has expired")]
     ExpiredToken,
+    #[error("Token has been revoked")]
     BlacklistedToken,
+    #[error("No authentication token provided")]
     MissingToken,
+    #[error("Internal error: {0}")]
     InternalError(String),
 }
 
 #[derive(Serialize)]
 struct ErrorBody {
     error: String,
-}
-
-impl fmt::Display for AuthError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidCredentials => write!(f, "Invalid username or password"),
-            Self::InvalidToken => write!(f, "Invalid token"),
-            Self::ExpiredToken => write!(f, "Token has expired"),
-            Self::BlacklistedToken => write!(f, "Token has been revoked"),
-            Self::MissingToken => write!(f, "No authentication token provided"),
-            Self::InternalError(msg) => write!(f, "Internal error: {msg}"),
-        }
-    }
 }
 
 impl ResponseError for AuthError {
