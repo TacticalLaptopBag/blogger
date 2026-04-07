@@ -1,56 +1,58 @@
-use crate::{config::Config, models::User};
-use chrono::Utc;
-use dashmap::DashMap;
-use std::sync::Arc;
+use crate::schema::token_blacklist::dsl::*;
+use crate::{config::Config, models::db::BlacklistEntry};
+use chrono::{NaiveDateTime, Utc};
+use diesel::r2d2::ConnectionManager;
+use diesel::{ExpressionMethods, RunQueryDsl, SqliteConnection, query_dsl::methods::FilterDsl};
+use r2d2::{Pool, PooledConnection};
+
+pub type DbPool = Pool<ConnectionManager<SqliteConnection>>;
 
 /// Shared application state injected via `web::Data`.
 pub struct AppState {
     pub config: Config,
-    /// In-memory user "database" — keyed by username.
-    /// Replace with a real DB in production.
-    pub users: Arc<DashMap<String, User>>,
-    /// Blacklisted token JTIs mapped to their expiry timestamp.
-    /// Entries are pruned lazily when they have already expired.
-    pub blacklist: Arc<DashMap<String, i64>>,
+    pool: DbPool,
 }
 
 impl AppState {
     pub fn new(config: Config) -> Self {
-        let users: Arc<DashMap<String, User>> = Arc::new(DashMap::new());
+        let manager = ConnectionManager::<SqliteConnection>::new(&config.database_url);
+        let pool = r2d2::Pool::builder()
+            .build(manager)
+            .expect("Failed to create pool");
+        let mut state = Self { config, pool };
+        state.prune_blacklist();
+        state
+    }
 
-        // Seed a demo user — password is "secret"
-        let hash =
-            bcrypt::hash("secret", bcrypt::DEFAULT_COST).expect("Failed to hash seed password");
-        users.insert(
-            "alice".into(),
-            User {
-                id: "usr_01".into(),
-                username: "alice".into(),
-                password_hash: hash,
-            },
-        );
-
-        Self {
-            config,
-            users,
-            blacklist: Arc::new(DashMap::new()),
-        }
+    fn get_conn(&self) -> PooledConnection<ConnectionManager<SqliteConnection>> {
+        self.pool.get().expect("Failed to get DB connection")
     }
 
     /// Add a JTI to the blacklist.
-    pub fn blacklist_token(&self, jti: &str, exp: i64) {
-        self.blacklist.insert(jti.to_owned(), exp);
+    pub fn blacklist_token(&mut self, other_jti: &str, exp: NaiveDateTime) {
+        let entry = BlacklistEntry {
+            jti: other_jti.into(),
+            expires_at: exp,
+        };
+
+        diesel::insert_into(token_blacklist)
+            .values(&entry)
+            .execute(&mut self.get_conn());
         self.prune_blacklist();
     }
 
     /// Returns `true` if the JTI is currently blacklisted.
-    pub fn is_blacklisted(&self, jti: &str) -> bool {
-        self.blacklist.contains_key(jti)
+    pub fn is_blacklisted(&mut self, other_jti: &str) -> bool {
+        diesel::select(diesel::dsl::exists(
+            token_blacklist.filter(jti.eq(other_jti)),
+        ))
+        .get_result(&mut self.get_conn())
+        .expect("Failed to check token blacklist")
     }
 
     /// Remove expired entries from the blacklist.
-    fn prune_blacklist(&self) {
-        let now = Utc::now().timestamp();
-        self.blacklist.retain(|_, exp| *exp > now);
+    fn prune_blacklist(&mut self) {
+        let now = Utc::now().naive_utc();
+        diesel::delete(token_blacklist.filter(expires_at.lt(now))).execute(&mut self.get_conn());
     }
 }

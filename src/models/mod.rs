@@ -1,14 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-// ── Stored user ──────────────────────────────────────────────────────────────
-
-#[derive(Clone, Debug)]
-pub struct User {
-    pub id: String,
-    pub username: String,
-    /// bcrypt hash of the password
-    pub password_hash: String,
-}
+pub mod db;
 
 // ── Request / response shapes ────────────────────────────────────────────────
 

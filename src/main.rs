@@ -2,6 +2,7 @@ mod auth;
 mod config;
 mod errors;
 mod models;
+mod schema;
 mod store;
 
 use actix_web::{App, HttpServer, middleware::Logger, web};
