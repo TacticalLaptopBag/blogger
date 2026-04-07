@@ -14,6 +14,11 @@ async fn main() -> std::io::Result<()> {
     env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
 
     let cfg = config::Config::from_env();
+    if cfg.jwt_secret == "debug-key" {
+        log::warn!("===============================================================");
+        log::warn!("JWT_SECRET is not configured! DO NOT use this in a deployment!");
+        log::warn!("===============================================================");
+    }
     let host = cfg.host.clone();
     let port = cfg.port;
 
