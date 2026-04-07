@@ -1,3 +1,40 @@
-fn main() {
-    println!("Hello, world!");
+mod auth;
+mod config;
+mod errors;
+mod models;
+mod store;
+
+use actix_web::{App, HttpServer, middleware::Logger, web};
+use store::AppState;
+
+#[actix_web::main]
+async fn main() -> std::io::Result<()> {
+    dotenvy::dotenv().ok();
+    env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
+
+    let cfg = config::Config::from_env();
+    let host = cfg.host.clone();
+    let port = cfg.port;
+
+    let state = web::Data::new(AppState::new(cfg));
+
+    log::info!("Starting auth-api on {host}:{port}");
+
+    HttpServer::new(move || {
+        App::new().service(
+            web::scope("/api/v1")
+                .app_data(state.clone())
+                .wrap(Logger::default())
+                // Login: POST submits credentials, GET returns current user info
+                .route("/login", web::post().to(auth::login_post))
+                .route("/login", web::get().to(auth::login_get))
+                // Refresh the access token using the refresh token cookie
+                .route("/refresh", web::post().to(auth::refresh_post))
+                // Logout: blacklist token and clear cookies
+                .route("/logout", web::post().to(auth::logout_post)),
+        )
+    })
+    .bind((host.as_str(), port))?
+    .run()
+    .await
 }
