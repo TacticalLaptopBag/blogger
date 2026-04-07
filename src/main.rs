@@ -31,7 +31,8 @@ async fn main() -> std::io::Result<()> {
                 // Refresh the access token using the refresh token cookie
                 .route("/refresh", web::post().to(auth::refresh_post))
                 // Logout: blacklist token and clear cookies
-                .route("/logout", web::post().to(auth::logout_post)),
+                .route("/logout", web::post().to(auth::logout_post))
+                .route("/protected", web::get().to(auth::protected_get)),
         )
     })
     .bind((host.as_str(), port))?

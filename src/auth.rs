@@ -3,6 +3,7 @@ use crate::{
     models::{AuthResponse, Claims, LoginForm, TokenKind, UserInfo},
     store::AppState,
 };
+use actix_web::FromRequest;
 use actix_web::{
     HttpRequest, HttpResponse,
     cookie::{Cookie, SameSite, time::Duration},
@@ -10,6 +11,8 @@ use actix_web::{
 };
 use chrono::Utc;
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
+use std::future::Future;
+use std::pin::Pin;
 use uuid::Uuid;
 
 // ── Cookie names ─────────────────────────────────────────────────────────────
@@ -242,4 +245,39 @@ pub async fn logout_post(
             state.config.use_secure_cookies,
         ))
         .json(serde_json::json!({ "message": "Logged out successfully" })))
+}
+
+impl FromRequest for Claims {
+    type Error = AuthError;
+    type Future = Pin<Box<dyn Future<Output = Result<Self, Self::Error>>>>;
+
+    fn from_request(req: &HttpRequest, _payload: &mut actix_web::dev::Payload) -> Self::Future {
+        let req = req.clone();
+        Box::pin(async move {
+            let state = req
+                .app_data::<web::Data<AppState>>()
+                .ok_or(AuthError::InternalError("Missing state".into()))?;
+
+            let token = cookie_value(&req, ACCESS_COOKIE).ok_or(AuthError::MissingToken)?;
+
+            let claims = verify_token(&state, &token)?;
+
+            if state.is_blacklisted(&claims.jti) {
+                return Err(AuthError::BlacklistedToken);
+            }
+            if claims.kind != TokenKind::Access {
+                return Err(AuthError::InvalidToken);
+            }
+
+            Ok(claims)
+        })
+    }
+}
+
+pub async fn protected_get(
+    user: Claims, // 401s automatically if token is missing/invalid
+) -> HttpResponse {
+    HttpResponse::Ok().json(serde_json::json!({
+        "message": format!("Hello, {}!", user.username)
+    }))
 }
