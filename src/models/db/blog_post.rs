@@ -9,7 +9,7 @@ use crate::schema;
     check_for_backend(Sqlite),
 )]
 pub struct BlogPost {
-    pub id: String,
+    pub id: i32,
     pub title: String,
     pub author_id: String,
     pub post_content: String,
@@ -23,7 +23,6 @@ pub struct BlogPost {
     check_for_backend(Sqlite),
 )]
 pub struct NewBlogPost {
-    pub id: String,
     pub title: String,
     pub author_id: String,
     pub post_content: String,
@@ -35,7 +34,7 @@ pub struct NewBlogPost {
     check_for_backend(Sqlite),
 )]
 pub struct BlogPostItem {
-    pub id: String,
+    pub id: i32,
     pub title: String,
     pub author_id: String,
     pub created_at: String,
@@ -47,7 +46,7 @@ pub struct BlogPostItem {
     check_for_backend(Sqlite),
 )]
 pub struct UpdateBlogPost {
-    pub id: String,
+    pub id: i32,
     pub title: String,
     pub post_content: String,
     pub modified_at: String,

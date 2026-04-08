@@ -138,7 +138,7 @@ impl AppState {
             .expect("Failed to get post list")
     }
 
-    pub fn get_post(&self, id: &str) -> Option<BlogPost> {
+    pub fn get_post(&self, id: i32) -> Option<BlogPost> {
         blog_post::table
             .filter(blog_post::id.eq(id))
             .select(BlogPost::as_select())
@@ -147,14 +147,15 @@ impl AppState {
             .and_then(|blogs| blogs.into_iter().next())
     }
 
-    pub fn create_post(&self, blog: NewBlogPost) {
+    pub fn create_post(&self, blog: NewBlogPost) -> i32 {
         diesel::insert_into(blog_post::table)
             .values(&blog)
-            .execute(&mut self.get_conn())
-            .expect("Failed to create post");
+            .returning(blog_post::id)
+            .get_result(&mut self.get_conn())
+            .expect("Failed to create post")
     }
 
-    pub fn update_post(&self, id: String, title: String, post_content: String) {
+    pub fn update_post(&self, id: i32, title: String, post_content: String) {
         let now = Utc::now().naive_utc();
         let post = UpdateBlogPost {
             id,
@@ -169,7 +170,7 @@ impl AppState {
             .expect("Failed to update post");
     }
 
-    pub fn delete_post(&self, id: &str) {
+    pub fn delete_post(&self, id: i32) {
         diesel::delete(blog_post::table.filter(blog_post::id.eq(id)))
             .execute(&mut self.get_conn())
             .expect("Failed to delete post");

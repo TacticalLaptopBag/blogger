@@ -1,6 +1,5 @@
 use actix_web::{HttpResponse, web};
 use serde_json::json;
-use uuid::Uuid;
 
 use crate::{
     models::{BlogPostForm, Claims, db::blog_post::NewBlogPost},
@@ -14,8 +13,8 @@ pub async fn post_list_get(state: web::Data<AppState>) -> HttpResponse {
     }))
 }
 
-pub async fn post_get(state: web::Data<AppState>, id: web::Path<String>) -> HttpResponse {
-    let post = state.get_post(&id);
+pub async fn post_get(state: web::Data<AppState>, id: web::Path<i32>) -> HttpResponse {
+    let post = state.get_post(*id);
     HttpResponse::Ok().json(json!({
         "post": post,
     }))
@@ -26,14 +25,12 @@ pub async fn post_post(
     form: web::Form<BlogPostForm>,
     claims: Claims,
 ) -> HttpResponse {
-    let id = Uuid::new_v4().to_string();
     let post = NewBlogPost {
-        id: id.clone(),
         title: form.title.clone(),
         author_id: claims.sub,
         post_content: form.post_content.clone(),
     };
-    state.create_post(post);
+    let id = state.create_post(post);
 
     HttpResponse::Ok().json(json!({
         "id": id,
@@ -45,9 +42,9 @@ pub async fn post_put(
     state: web::Data<AppState>,
     form: web::Form<BlogPostForm>,
     claims: Claims,
-    id: web::Path<String>,
+    id: web::Path<i32>,
 ) -> HttpResponse {
-    let existing_post = state.get_post(&id);
+    let existing_post = state.get_post(*id);
     if let Some(post) = existing_post
         && post.author_id == claims.sub
     {
@@ -65,13 +62,13 @@ pub async fn post_put(
 pub async fn post_delete(
     state: web::Data<AppState>,
     claims: Claims,
-    id: web::Path<String>,
+    id: web::Path<i32>,
 ) -> HttpResponse {
-    let existing_post = state.get_post(&id);
+    let existing_post = state.get_post(*id);
     if let Some(post) = existing_post
         && post.author_id == claims.sub
     {
-        state.delete_post(&id);
+        state.delete_post(*id);
         return HttpResponse::Ok().json(json!({
             "message": format!("Deleted post \"{}\"", post.title),
         }));
