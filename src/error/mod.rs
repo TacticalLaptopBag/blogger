@@ -2,8 +2,6 @@ use actix_web::{HttpResponse, ResponseError};
 use serde::Serialize;
 use thiserror::Error;
 
-use crate::error::db::DbError;
-
 pub mod auth;
 pub mod config;
 pub mod db;
@@ -18,6 +16,14 @@ pub enum BloggerError {
     BcryptError(#[from] bcrypt::BcryptError),
     #[error(transparent)]
     DbError(#[from] db::DbError),
+    #[error("Blocking task was canceled")]
+    Blocking,
+}
+
+impl From<actix_web::error::BlockingError> for BloggerError {
+    fn from(_: actix_web::error::BlockingError) -> Self {
+        BloggerError::Blocking
+    }
 }
 
 impl From<BloggerError> for std::io::Error {
@@ -34,7 +40,7 @@ impl ResponseError for BloggerError {
         match self {
             Self::AuthError(_) => HttpResponse::Unauthorized().json(body),
             Self::DbError(de) => match de {
-                DbError::NotFound => HttpResponse::NotFound().json(body),
+                db::DbError::NotFound => HttpResponse::NotFound().json(body),
                 _ => HttpResponse::InternalServerError().json(body),
             },
             _ => HttpResponse::InternalServerError().json(body),

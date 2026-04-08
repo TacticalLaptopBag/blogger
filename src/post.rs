@@ -2,13 +2,13 @@ use actix_web::{HttpResponse, web};
 use serde_json::json;
 
 use crate::{
-    error::{BloggerResult, auth::AuthError, db::DbError},
+    error::{BloggerError, BloggerResult, auth::AuthError, db::DbError},
     models::{BlogPostForm, Claims, db::blog_post::NewBlogPost},
     store::AppState,
 };
 
 pub async fn post_list_get(state: web::Data<AppState>) -> BloggerResult<HttpResponse> {
-    let post_list = state.get_post_list()?;
+    let post_list = web::block(move || state.get_post_list()).await??;
     Ok(HttpResponse::Ok().json(json!({
         "posts": post_list,
     })))
@@ -18,7 +18,12 @@ pub async fn post_get(
     state: web::Data<AppState>,
     id: web::Path<i32>,
 ) -> BloggerResult<HttpResponse> {
-    let post = state.get_post(*id)?.ok_or(DbError::NotFound)?;
+    let post = web::block(move || {
+        state
+            .get_post(*id)?
+            .ok_or(BloggerError::DbError(DbError::NotFound))
+    })
+    .await??;
     Ok(HttpResponse::Ok().json(json!({
         "post": post,
     })))
@@ -34,7 +39,7 @@ pub async fn post_post(
         author_id: claims.sub,
         post_content: form.post_content.clone(),
     };
-    let id = state.create_post(post)?;
+    let id = web::block(move || state.create_post(post)).await??;
 
     Ok(HttpResponse::Ok().json(json!({
         "id": id,
@@ -48,13 +53,23 @@ pub async fn post_put(
     claims: Claims,
     id: web::Path<i32>,
 ) -> BloggerResult<HttpResponse> {
-    let existing_post = state.get_post(*id)?.ok_or(DbError::NotFound)?;
+    let id_into = id;
+    let state_into = state.clone();
+    let existing_post = web::block(move || {
+        state_into
+            .get_post(*id_into)?
+            .ok_or(BloggerError::DbError(DbError::NotFound))
+    })
+    .await??;
     if existing_post.author_id == claims.sub {
-        state.update_post(
-            existing_post.id,
-            form.title.clone(),
-            form.post_content.clone(),
-        )?;
+        web::block(move || {
+            state.update_post(
+                existing_post.id,
+                form.title.clone(),
+                form.post_content.clone(),
+            )
+        })
+        .await??;
         return Ok(HttpResponse::Ok().json(json!({
             "message": format!("Updated post \"{}\"", existing_post.title),
         })));
@@ -68,9 +83,16 @@ pub async fn post_delete(
     claims: Claims,
     id: web::Path<i32>,
 ) -> BloggerResult<HttpResponse> {
-    let existing_post = state.get_post(*id)?.ok_or(DbError::NotFound)?;
+    let id_into = id.clone();
+    let state_into = state.clone();
+    let existing_post = web::block(move || {
+        state_into
+            .get_post(id_into)?
+            .ok_or(BloggerError::DbError(DbError::NotFound))
+    })
+    .await??;
     if existing_post.author_id == claims.sub {
-        state.delete_post(*id)?;
+        web::block(move || state.delete_post(*id)).await??;
         return Ok(HttpResponse::Ok().json(json!({
             "message": format!("Deleted post \"{}\"", existing_post.title),
         })));

@@ -108,9 +108,14 @@ pub async fn login_post(
     form: web::Form<LoginForm>,
 ) -> BloggerResult<HttpResponse> {
     // Look up user
-    let user = state
-        .get_user_by_name(&form.username)?
-        .ok_or(AuthError::InvalidCredentials)?;
+    let state_into = state.clone();
+    let username_into = form.username.clone();
+    let user = web::block(move || {
+        state_into
+            .get_user_by_name(&username_into)?
+            .ok_or(BloggerError::AuthError(AuthError::InvalidCredentials))
+    })
+    .await??;
 
     // Verify password
     let valid = bcrypt::verify(&form.password, &user.password_hash)
@@ -146,9 +151,12 @@ pub async fn login_post(
 
 /// GET /login — return information about the currently authenticated user.
 pub async fn login_get(claims: Claims, state: web::Data<AppState>) -> BloggerResult<HttpResponse> {
-    let user = state
-        .get_user_by_id(&claims.sub)?
-        .ok_or(AuthError::InvalidToken)?;
+    let user = web::block(move || {
+        state
+            .get_user_by_id(&claims.sub)?
+            .ok_or(BloggerError::AuthError(AuthError::InvalidToken))
+    })
+    .await??;
 
     Ok(HttpResponse::Ok().json(UserInfo {
         id: user.id.clone(),
@@ -164,7 +172,10 @@ pub async fn refresh_post(
     let token = cookie_value(&req, REFRESH_COOKIE).ok_or(AuthError::MissingToken)?;
     let claims = verify_token(&state, &token)?;
 
-    if state.is_blacklisted(&claims.jti)? {
+    let jti_into = claims.jti.clone();
+    let state_into = state.clone();
+    let is_blacklisted = web::block(move || state_into.is_blacklisted(&jti_into)).await??;
+    if is_blacklisted {
         return Err(AuthError::BlacklistedToken.into());
     }
     if claims.kind != TokenKind::Refresh {
@@ -172,12 +183,20 @@ pub async fn refresh_post(
     }
 
     // Blacklist the used refresh token (single-use rotation)
-    state.blacklist_token(&claims.jti, claims.exp)?;
+    let state_into = state.clone();
+    let claims_into = claims.clone();
+    let refresh_blacklist_fut =
+        web::block(move || state_into.blacklist_token(&claims_into.jti, claims_into.exp));
+    let mut access_blacklist_fut = None;
 
     // Blacklist the refreshed token, if it hasn't already expired
     let access_token = cookie_value(&req, ACCESS_COOKIE).ok_or(AuthError::MissingToken)?;
     if let Ok(access_claims) = verify_token(&state, &access_token) {
-        state.blacklist_token(&access_claims.jti, access_claims.exp)?;
+        let state_into = state.clone();
+        let access_claims_into = access_claims.clone();
+        access_blacklist_fut = Some(web::block(move || {
+            state_into.blacklist_token(&access_claims_into.jti, access_claims_into.exp)
+        }));
     }
 
     let new_access = make_token(&state, &claims.sub, &claims.username, TokenKind::Access)?;
@@ -196,6 +215,11 @@ pub async fn refresh_post(
         state.config.use_secure_cookies,
     );
 
+    refresh_blacklist_fut.await??;
+    if let Some(fut) = access_blacklist_fut {
+        fut.await??
+    }
+
     Ok(HttpResponse::Ok()
         .cookie(access_cookie)
         .cookie(refresh_cookie)
@@ -210,17 +234,34 @@ pub async fn logout_post(
     state: web::Data<AppState>,
 ) -> BloggerResult<HttpResponse> {
     // Blacklist the access token if present and valid
+    let mut access_blacklist_fut = None;
     if let Some(token) = cookie_value(&req, ACCESS_COOKIE) {
         if let Ok(claims) = verify_token(&state, &token) {
-            state.blacklist_token(&claims.jti, claims.exp)?;
+            let state_into = state.clone();
+            let claims_into = claims.clone();
+            access_blacklist_fut = Some(web::block(move || {
+                state_into.blacklist_token(&claims_into.jti, claims_into.exp)
+            }));
         }
     }
 
     // Blacklist the refresh token if present and valid
+    let mut refresh_blacklist_fut = None;
     if let Some(token) = cookie_value(&req, REFRESH_COOKIE) {
         if let Ok(claims) = verify_token(&state, &token) {
-            state.blacklist_token(&claims.jti, claims.exp)?;
+            let state_into = state.clone();
+            let claims_into = claims.clone();
+            refresh_blacklist_fut = Some(web::block(move || {
+                state_into.blacklist_token(&claims_into.jti, claims_into.exp)
+            }));
         }
+    }
+
+    if let Some(fut) = access_blacklist_fut {
+        fut.await??
+    }
+    if let Some(fut) = refresh_blacklist_fut {
+        fut.await??
     }
 
     Ok(HttpResponse::Ok()
@@ -264,9 +305,13 @@ pub async fn login_put(
     form: web::Form<ChangePasswordForm>,
     state: web::Data<AppState>,
 ) -> BloggerResult<HttpResponse> {
-    let user = state
-        .get_user_by_id(&claims.sub)?
-        .ok_or(AuthError::InvalidCredentials)?;
+    let state_into = state.clone();
+    let user = web::block(move || {
+        state_into
+            .get_user_by_id(&claims.sub)?
+            .ok_or(BloggerError::AuthError(AuthError::InvalidCredentials))
+    })
+    .await??;
     let valid = bcrypt::verify(&form.old_password, &user.password_hash)
         .map_err(|e| AuthError::InternalError(e.to_string()))?;
 
@@ -274,7 +319,7 @@ pub async fn login_put(
         return Err(AuthError::InvalidCredentials.into());
     }
 
-    state.update_password(&user.id, &form.password)?;
+    web::block(move || state.update_password(&user.id, &form.password)).await??;
 
     Ok(HttpResponse::Ok().json(serde_json::json!({
         "message": "Password changed successfully"
@@ -285,6 +330,11 @@ pub async fn user_get(
     id: web::Path<String>,
     state: web::Data<AppState>,
 ) -> BloggerResult<HttpResponse> {
-    let user = state.get_user_by_id(&id)?.ok_or(DbError::NotFound)?;
+    let user = web::block(move || {
+        state
+            .get_user_by_id(&id)?
+            .ok_or(BloggerError::DbError(DbError::NotFound))
+    })
+    .await??;
     Ok(HttpResponse::Ok().json(UserInfo::from_user(user)))
 }
