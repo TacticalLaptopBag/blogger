@@ -291,3 +291,14 @@ pub async fn login_put(
         "message": "Password changed successfully"
     })))
 }
+
+pub async fn user_get(
+    id: web::Path<String>,
+    state: web::Data<AppState>,
+) -> Result<HttpResponse, AuthError> {
+    let user = state
+        .get_user_by_id(&id)
+        .ok_or(AuthError::InvalidCredentials)?;
+
+    Ok(HttpResponse::Ok().json(UserInfo::from_user(user)))
+}

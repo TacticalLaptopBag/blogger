@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::models::db::user::User;
+
 pub mod db;
 
 // ── Request / response shapes ────────────────────────────────────────────────
@@ -28,6 +30,15 @@ pub struct ChangePasswordForm {
 pub struct UserInfo {
     pub id: String,
     pub username: String,
+}
+
+impl UserInfo {
+    pub fn from_user(user: User) -> Self {
+        Self {
+            id: user.id,
+            username: user.username,
+        }
+    }
 }
 
 /// Returned on a successful login or refresh

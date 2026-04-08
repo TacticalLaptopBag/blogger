@@ -40,6 +40,7 @@ async fn main() -> std::io::Result<()> {
                 .route("/refresh", web::post().to(auth::refresh_post))
                 // Logout: blacklist token and clear cookies
                 .route("/logout", web::post().to(auth::logout_post))
+                .route("/user/{id}", web::get().to(auth::user_get))
                 .route("/protected", web::get().to(auth::protected_get))
                 .route("/post", web::get().to(post::post_list_get))
                 .route("/post", web::post().to(post::post_post))
