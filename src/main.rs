@@ -1,6 +1,6 @@
 mod auth;
 mod config;
-mod errors;
+mod error;
 mod models;
 mod post;
 mod schema;
@@ -14,7 +14,7 @@ async fn main() -> std::io::Result<()> {
     dotenvy::dotenv().ok();
     env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
 
-    let cfg = config::Config::from_env();
+    let cfg = config::Config::from_env()?;
     if cfg.jwt_secret == "debug-key" {
         log::warn!("===============================================================");
         log::warn!("JWT_SECRET is not configured! DO NOT use this in a deployment!");
@@ -23,7 +23,7 @@ async fn main() -> std::io::Result<()> {
     let host = cfg.host.clone();
     let port = cfg.port;
 
-    let state = web::Data::new(AppState::new(cfg));
+    let state = web::Data::new(AppState::new(cfg)?);
 
     log::info!("Starting auth-api on {host}:{port}");
 
@@ -41,7 +41,6 @@ async fn main() -> std::io::Result<()> {
                 // Logout: blacklist token and clear cookies
                 .route("/logout", web::post().to(auth::logout_post))
                 .route("/user/{id}", web::get().to(auth::user_get))
-                .route("/protected", web::get().to(auth::protected_get))
                 .route("/post", web::get().to(post::post_list_get))
                 .route("/post", web::post().to(post::post_post))
                 .route("/post/{id}", web::get().to(post::post_get))

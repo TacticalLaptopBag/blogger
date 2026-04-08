@@ -1,5 +1,5 @@
 use crate::{
-    errors::AuthError,
+    error::{BloggerError, BloggerResult, auth::AuthError},
     models::{AuthResponse, ChangePasswordForm, Claims, LoginForm, TokenKind, UserInfo},
     store::AppState,
 };
@@ -106,10 +106,10 @@ fn clear_cookie(name: &'static str, use_secure: bool) -> Cookie<'static> {
 pub async fn login_post(
     state: web::Data<AppState>,
     form: web::Form<LoginForm>,
-) -> Result<HttpResponse, AuthError> {
+) -> BloggerResult<HttpResponse> {
     // Look up user
     let user = state
-        .get_user_by_name(&form.username)
+        .get_user_by_name(&form.username)?
         .ok_or(AuthError::InvalidCredentials)?;
 
     // Verify password
@@ -117,7 +117,7 @@ pub async fn login_post(
         .map_err(|e| AuthError::InternalError(e.to_string()))?;
 
     if !valid {
-        return Err(AuthError::InvalidCredentials);
+        return Err(AuthError::InvalidCredentials.into());
     }
 
     let access = make_token(&state, &user.id, &user.username, TokenKind::Access)?;
@@ -145,12 +145,9 @@ pub async fn login_post(
 }
 
 /// GET /login — return information about the currently authenticated user.
-pub async fn login_get(
-    claims: Claims,
-    state: web::Data<AppState>,
-) -> Result<HttpResponse, AuthError> {
+pub async fn login_get(claims: Claims, state: web::Data<AppState>) -> BloggerResult<HttpResponse> {
     let user = state
-        .get_user_by_id(&claims.sub)
+        .get_user_by_id(&claims.sub)?
         .ok_or(AuthError::InvalidToken)?;
 
     Ok(HttpResponse::Ok().json(UserInfo {
@@ -163,24 +160,24 @@ pub async fn login_get(
 pub async fn refresh_post(
     req: HttpRequest,
     state: web::Data<AppState>,
-) -> Result<HttpResponse, AuthError> {
+) -> BloggerResult<HttpResponse> {
     let token = cookie_value(&req, REFRESH_COOKIE).ok_or(AuthError::MissingToken)?;
     let claims = verify_token(&state, &token)?;
 
-    if state.is_blacklisted(&claims.jti) {
-        return Err(AuthError::BlacklistedToken);
+    if state.is_blacklisted(&claims.jti)? {
+        return Err(AuthError::BlacklistedToken.into());
     }
     if claims.kind != TokenKind::Refresh {
-        return Err(AuthError::InvalidToken);
+        return Err(AuthError::InvalidToken.into());
     }
 
     // Blacklist the used refresh token (single-use rotation)
-    state.blacklist_token(&claims.jti, claims.exp);
+    state.blacklist_token(&claims.jti, claims.exp)?;
 
     // Blacklist the refreshed token, if it hasn't already expired
     let access_token = cookie_value(&req, ACCESS_COOKIE).ok_or(AuthError::MissingToken)?;
     if let Ok(access_claims) = verify_token(&state, &access_token) {
-        state.blacklist_token(&access_claims.jti, access_claims.exp);
+        state.blacklist_token(&access_claims.jti, access_claims.exp)?;
     }
 
     let new_access = make_token(&state, &claims.sub, &claims.username, TokenKind::Access)?;
@@ -211,18 +208,18 @@ pub async fn refresh_post(
 pub async fn logout_post(
     req: HttpRequest,
     state: web::Data<AppState>,
-) -> Result<HttpResponse, AuthError> {
+) -> BloggerResult<HttpResponse> {
     // Blacklist the access token if present and valid
     if let Some(token) = cookie_value(&req, ACCESS_COOKIE) {
         if let Ok(claims) = verify_token(&state, &token) {
-            state.blacklist_token(&claims.jti, claims.exp);
+            state.blacklist_token(&claims.jti, claims.exp)?;
         }
     }
 
     // Blacklist the refresh token if present and valid
     if let Some(token) = cookie_value(&req, REFRESH_COOKIE) {
         if let Ok(claims) = verify_token(&state, &token) {
-            state.blacklist_token(&claims.jti, claims.exp);
+            state.blacklist_token(&claims.jti, claims.exp)?;
         }
     }
 
@@ -236,7 +233,7 @@ pub async fn logout_post(
 }
 
 impl FromRequest for Claims {
-    type Error = AuthError;
+    type Error = BloggerError;
     type Future = Pin<Box<dyn Future<Output = Result<Self, Self::Error>>>>;
 
     fn from_request(req: &HttpRequest, _payload: &mut actix_web::dev::Payload) -> Self::Future {
@@ -250,11 +247,11 @@ impl FromRequest for Claims {
 
             let claims = verify_token(&state, &token)?;
 
-            if state.is_blacklisted(&claims.jti) {
-                return Err(AuthError::BlacklistedToken);
+            if state.is_blacklisted(&claims.jti).unwrap_or(true) {
+                return Err(AuthError::BlacklistedToken.into());
             }
             if claims.kind != TokenKind::Access {
-                return Err(AuthError::InvalidToken);
+                return Err(AuthError::InvalidToken.into());
             }
 
             Ok(claims)
@@ -262,30 +259,22 @@ impl FromRequest for Claims {
     }
 }
 
-pub async fn protected_get(
-    user: Claims, // 401s automatically if token is missing/invalid
-) -> HttpResponse {
-    HttpResponse::Ok().json(serde_json::json!({
-        "message": format!("Hello, {}!", user.username)
-    }))
-}
-
 pub async fn login_put(
     claims: Claims,
     form: web::Form<ChangePasswordForm>,
     state: web::Data<AppState>,
-) -> Result<HttpResponse, AuthError> {
+) -> BloggerResult<HttpResponse> {
     let user = state
-        .get_user_by_id(&claims.sub)
+        .get_user_by_id(&claims.sub)?
         .ok_or(AuthError::InvalidCredentials)?;
     let valid = bcrypt::verify(&form.old_password, &user.password_hash)
         .map_err(|e| AuthError::InternalError(e.to_string()))?;
 
     if !valid {
-        return Err(AuthError::InvalidCredentials);
+        return Err(AuthError::InvalidCredentials.into());
     }
 
-    state.update_password(&user.id, &form.password);
+    state.update_password(&user.id, &form.password)?;
 
     Ok(HttpResponse::Ok().json(serde_json::json!({
         "message": "Password changed successfully"
@@ -295,9 +284,9 @@ pub async fn login_put(
 pub async fn user_get(
     id: web::Path<String>,
     state: web::Data<AppState>,
-) -> Result<HttpResponse, AuthError> {
+) -> BloggerResult<HttpResponse> {
     let user = state
-        .get_user_by_id(&id)
+        .get_user_by_id(&id)?
         .ok_or(AuthError::InvalidCredentials)?;
 
     Ok(HttpResponse::Ok().json(UserInfo::from_user(user)))

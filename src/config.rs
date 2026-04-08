@@ -1,5 +1,7 @@
 use std::env;
 
+use crate::error::{BloggerResult, config::ConfigError};
+
 #[derive(Clone, Debug)]
 pub struct Config {
     pub jwt_secret: String,
@@ -17,30 +19,31 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn from_env() -> Self {
-        Self {
-            jwt_secret: env::var("JWT_SECRET").expect("JWT_SECRET must be set"),
+    pub fn from_env() -> BloggerResult<Self> {
+        Ok(Self {
+            jwt_secret: env::var("JWT_SECRET").map_err(|_| ConfigError::Unset("JWT_SECRET"))?,
             jwt_expiry_secs: env::var("JWT_EXPIRY_SECONDS")
                 .unwrap_or("900".into())
                 .parse()
-                .expect("JWT_EXPIRY_SECONDS must be a number"),
+                .map_err(|_| ConfigError::NotANumber("JWT_EXPIRY_SECONDS"))?,
             jwt_refresh_expiry_secs: env::var("JWT_REFRESH_EXPIRY_SECONDS")
                 .unwrap_or("604800".into())
                 .parse()
-                .expect("JWT_REFRESH_EXPIRY_SECONDS must be a number"),
+                .map_err(|_| ConfigError::NotANumber("JWT_REFRESH_EXPIRY_SECONDS"))?,
             use_secure_cookies: env::var("USE_SECURE_COOKIES")
                 .unwrap_or("true".into())
                 .to_lowercase()
                 .parse()
-                .expect("USE_SECURE_COOKIES must be a boolean"),
+                .map_err(|_| ConfigError::NotABoolean("USE_SECURE_COOKIES"))?,
             host: env::var("HOST").unwrap_or("127.0.0.1".into()),
             port: env::var("PORT")
                 .unwrap_or("8080".into())
                 .parse()
-                .expect("PORT must be a number"),
-            database_url: env::var("DATABASE_URL").expect("DATABASE_URL must be set"),
+                .map_err(|_| ConfigError::NotANumber("PORT"))?,
+            database_url: env::var("DATABASE_URL")
+                .map_err(|_| ConfigError::Unset("DATABASE_URL"))?,
             init_user_name: env::var("INIT_USER_NAME").ok(),
             init_user_pass: env::var("INIT_USER_PASS").ok(),
-        }
+        })
     }
 }
