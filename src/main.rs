@@ -6,8 +6,13 @@ mod post;
 mod schema;
 mod store;
 
+use actix_files::{Files, NamedFile};
 use actix_web::{App, HttpServer, middleware::Logger, web};
 use store::AppState;
+
+async fn index() -> actix_web::Result<NamedFile> {
+    Ok(NamedFile::open("./frontend/index.html")?)
+}
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -28,25 +33,28 @@ async fn main() -> std::io::Result<()> {
     log::info!("Starting auth-api on {host}:{port}");
 
     HttpServer::new(move || {
-        App::new().service(
-            web::scope("/api/v1")
-                .app_data(state.clone())
-                .wrap(Logger::default())
-                // Login: POST submits credentials, GET returns current user info
-                .route("/login", web::post().to(auth::login_post))
-                .route("/login", web::get().to(auth::login_get))
-                .route("/login", web::put().to(auth::login_put))
-                // Refresh the access token using the refresh token cookie
-                .route("/refresh", web::post().to(auth::refresh_post))
-                // Logout: blacklist token and clear cookies
-                .route("/logout", web::post().to(auth::logout_post))
-                .route("/user/{id}", web::get().to(auth::user_get))
-                .route("/post", web::get().to(post::post_list_get))
-                .route("/post", web::post().to(post::post_post))
-                .route("/post/{id}", web::get().to(post::post_get))
-                .route("/post/{id}", web::put().to(post::post_put))
-                .route("/post/{id}", web::delete().to(post::post_delete)),
-        )
+        App::new()
+            .service(
+                web::scope("/api/v1")
+                    .app_data(state.clone())
+                    .wrap(Logger::default())
+                    // Login: POST submits credentials, GET returns current user info
+                    .route("/login", web::post().to(auth::login_post))
+                    .route("/login", web::get().to(auth::login_get))
+                    .route("/login", web::put().to(auth::login_put))
+                    // Refresh the access token using the refresh token cookie
+                    .route("/refresh", web::post().to(auth::refresh_post))
+                    // Logout: blacklist token and clear cookies
+                    .route("/logout", web::post().to(auth::logout_post))
+                    .route("/user/{id}", web::get().to(auth::user_get))
+                    .route("/post", web::get().to(post::post_list_get))
+                    .route("/post", web::post().to(post::post_post))
+                    .route("/post/{id}", web::get().to(post::post_get))
+                    .route("/post/{id}", web::put().to(post::post_put))
+                    .route("/post/{id}", web::delete().to(post::post_delete)),
+            )
+            .service(Files::new("/", "./frontend").index_file("index.html"))
+            .default_service(web::get().to(index))
     })
     .bind((host.as_str(), port))?
     .run()
