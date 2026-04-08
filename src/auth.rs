@@ -1,5 +1,5 @@
 use crate::{
-    error::{BloggerError, BloggerResult, auth::AuthError},
+    error::{BloggerError, BloggerResult, auth::AuthError, db::DbError},
     models::{AuthResponse, ChangePasswordForm, Claims, LoginForm, TokenKind, UserInfo},
     store::AppState,
 };
@@ -285,9 +285,6 @@ pub async fn user_get(
     id: web::Path<String>,
     state: web::Data<AppState>,
 ) -> BloggerResult<HttpResponse> {
-    let user = state
-        .get_user_by_id(&id)?
-        .ok_or(AuthError::InvalidCredentials)?;
-
+    let user = state.get_user_by_id(&id)?.ok_or(DbError::NotFound)?;
     Ok(HttpResponse::Ok().json(UserInfo::from_user(user)))
 }

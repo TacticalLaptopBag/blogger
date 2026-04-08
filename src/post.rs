@@ -2,7 +2,7 @@ use actix_web::{HttpResponse, web};
 use serde_json::json;
 
 use crate::{
-    error::{BloggerResult, auth::AuthError},
+    error::{BloggerResult, auth::AuthError, db::DbError},
     models::{BlogPostForm, Claims, db::blog_post::NewBlogPost},
     store::AppState,
 };
@@ -18,7 +18,7 @@ pub async fn post_get(
     state: web::Data<AppState>,
     id: web::Path<i32>,
 ) -> BloggerResult<HttpResponse> {
-    let post = state.get_post(*id)?;
+    let post = state.get_post(*id)?.ok_or(DbError::NotFound)?;
     Ok(HttpResponse::Ok().json(json!({
         "post": post,
     })))
@@ -48,13 +48,15 @@ pub async fn post_put(
     claims: Claims,
     id: web::Path<i32>,
 ) -> BloggerResult<HttpResponse> {
-    let existing_post = state.get_post(*id)?;
-    if let Some(post) = existing_post
-        && post.author_id == claims.sub
-    {
-        state.update_post(post.id, form.title.clone(), form.post_content.clone())?;
+    let existing_post = state.get_post(*id)?.ok_or(DbError::NotFound)?;
+    if existing_post.author_id == claims.sub {
+        state.update_post(
+            existing_post.id,
+            form.title.clone(),
+            form.post_content.clone(),
+        )?;
         return Ok(HttpResponse::Ok().json(json!({
-            "message": format!("Updated post \"{}\"", post.title),
+            "message": format!("Updated post \"{}\"", existing_post.title),
         })));
     }
 
@@ -66,13 +68,11 @@ pub async fn post_delete(
     claims: Claims,
     id: web::Path<i32>,
 ) -> BloggerResult<HttpResponse> {
-    let existing_post = state.get_post(*id)?;
-    if let Some(post) = existing_post
-        && post.author_id == claims.sub
-    {
+    let existing_post = state.get_post(*id)?.ok_or(DbError::NotFound)?;
+    if existing_post.author_id == claims.sub {
         state.delete_post(*id)?;
         return Ok(HttpResponse::Ok().json(json!({
-            "message": format!("Deleted post \"{}\"", post.title),
+            "message": format!("Deleted post \"{}\"", existing_post.title),
         })));
     }
 

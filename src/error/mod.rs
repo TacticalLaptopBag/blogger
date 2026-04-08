@@ -2,6 +2,8 @@ use actix_web::{HttpResponse, ResponseError};
 use serde::Serialize;
 use thiserror::Error;
 
+use crate::error::db::DbError;
+
 pub mod auth;
 pub mod config;
 pub mod db;
@@ -31,6 +33,10 @@ impl ResponseError for BloggerError {
         };
         match self {
             Self::AuthError(_) => HttpResponse::Unauthorized().json(body),
+            Self::DbError(de) => match de {
+                DbError::NotFound => HttpResponse::NotFound().json(body),
+                _ => HttpResponse::InternalServerError().json(body),
+            },
             _ => HttpResponse::InternalServerError().json(body),
         }
     }

@@ -6,4 +6,6 @@ pub enum DbError {
     R2d2Error(#[from] r2d2::Error),
     #[error(transparent)]
     QueryError(#[from] diesel::result::Error),
+    #[error("The desired object is missing")]
+    NotFound,
 }
